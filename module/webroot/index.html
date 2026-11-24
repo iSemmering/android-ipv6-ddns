@@ -1,0 +1,873 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>IPv6 DDNS</title>
+<style>
+:root {
+  color-scheme: light;
+  --accent: #2f54eb;
+  --accent-on: var(--white);
+  --ink: #18243c;
+  --muted: #5d6c85;
+  --line: #e1e7f0;
+  --white: #fff;
+  --page-bg: #f6f6f6;
+  --settings-ink: #383838;
+  --settings-muted: #737373;
+  --settings-placeholder: #a6a6a6;
+  --settings-divider: #eeeeee;
+  --settings-chevron: #bdbdbd;
+  --settings-error: #d9363e;
+  --settings-input-ink: #1c1e1f;
+  --field-ink: #435371;
+  --field-border: #d5deec;
+  --disabled-bg: #f3f5f9;
+  --disabled-ink: #68758c;
+  --success: #349e00;
+  --pale: #f0f5ff;
+  --accent-border: #adc6ff;
+  --accent-deep: #1d39c4;
+  --focus-color: var(--accent);
+  --accent-disabled: var(--accent-border);
+  --seconds-control-width: 92px;
+  --toast-success-color: #52c41a;
+  --toast-error-color: #ff4d4f;
+  --toast-warning-color: #faad14;
+  --switch-off: #c5cddd;
+  --switch-shadow: #18243c30;
+  --toast-shadow: 0 6px 16px rgb(0 0 0 / .08), 0 3px 6px -4px rgb(0 0 0 / .12), 0 9px 28px 8px rgb(0 0 0 / .05);
+  --status-stopped-rgb: 125 142 165;
+  --status-running-rgb: 13 163 125;
+  --status-working-rgb: 221 132 39;
+  --status-error-rgb: 216 76 108;
+  --status-stopped-surface: #edf2f8;
+  --status-running-surface: #d0f7e8;
+  --status-working-surface: #fff3df;
+  --status-error-surface: #fde8ee;
+  --status-stopped-text: #34475f;
+  --status-running-text: #0e4a3b;
+  --status-working-text: #60360f;
+  --status-error-text: #702a3d;
+  --status-breath-duration: 2.4s;
+  font: 15px/1.55 "PingFang SC", "Noto Sans SC", "Microsoft YaHei", system-ui, sans-serif;
+  color: var(--ink);
+  background: var(--page-bg);
+}
+* { box-sizing: border-box; }
+body { margin: 0; }
+button, input, select { font: inherit; }
+button, select { cursor: pointer; }
+button { -webkit-tap-highlight-color: transparent; touch-action: manipulation; }
+button:disabled, select:disabled { cursor: default; }
+button:focus-visible {
+  outline: 3px solid var(--focus-color);
+  outline-offset: 2px;
+}
+[hidden] { display: none !important; }
+h2, p { margin: 0; }
+h2 { font-size: 16px; font-weight: 740; }
+.stage {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  max-width: 484px;
+  margin: 0 auto;
+  padding: 28px 20px;
+}
+.app {
+  display: flex;
+  flex-direction: column;
+  height: min(742px, calc(100vh - 56px));
+  height: min(742px, calc(100dvh - 56px));
+  min-height: 380px;
+}
+.tabs {
+  --tab-gap: 4px;
+  position: relative;
+  isolation: isolate;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  flex: none;
+  gap: var(--tab-gap);
+  padding: 8px 16px max(8px, env(safe-area-inset-bottom));
+  border-top: 1px solid var(--line);
+  background: var(--white);
+}
+.tabs::before {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  grid-column: 1 / 2;
+  grid-row: 1 / 2;
+  inset: 0;
+  border-radius: 10px;
+  background: var(--accent);
+  pointer-events: none;
+  transform: translateX(calc(var(--active-tab, 0) * (100% + var(--tab-gap))));
+  transition: transform 280ms cubic-bezier(.2, .72, .24, 1);
+}
+.tabs button, .ghost, .choice, .secondary {
+  min-height: 42px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--muted);
+  font-weight: 650;
+}
+.tabs button { transition: color 180ms ease; }
+.tabs button[aria-selected="true"] { color: var(--accent-on); }
+.choice[aria-pressed="true"] {
+  background: var(--pale);
+  color: var(--accent);
+}
+.panels {
+  flex: 1;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  scrollbar-width: thin;
+  padding: 16px;
+}
+.panel, .stack { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; }
+.section-group { display: grid; grid-template-columns: minmax(0, 1fr); gap: 7px; min-width: 0; }
+.section-heading { padding-inline: 2px; }
+.card, .hero { padding: 15px; border-radius: 16px; }
+.card { background: var(--white); border: 1px solid var(--line); }
+.hero {
+  --status-rgb: var(--status-stopped-rgb);
+  --status-surface: var(--status-stopped-surface);
+  --status-text: var(--status-stopped-text);
+  position: relative;
+  display: grid;
+  gap: 14px;
+  padding: 18px;
+  color: var(--status-text);
+  background-color: var(--status-surface);
+  background-image: radial-gradient(ellipse at bottom right,
+    rgb(var(--hero-gradient-rgb, var(--status-rgb)) / var(--hero-gradient-opacity, .20)), transparent 74%);
+  box-shadow: inset 0 0 0 1px rgb(var(--status-rgb) / .18);
+  transition: background-color .2s ease, color .2s ease;
+}
+.hero[data-tone="running"] {
+  --status-rgb: var(--status-running-rgb);
+  --status-surface: #d0f7df;
+  --hero-gradient-rgb: 13 163 45;
+  --hero-gradient-opacity: .66;
+  --status-text: var(--status-running-text);
+}
+.hero[data-tone="working"] {
+  --status-rgb: var(--status-working-rgb);
+  --status-surface: var(--status-working-surface);
+  --status-text: var(--status-working-text);
+}
+.hero[data-tone="error"] {
+  --status-rgb: var(--status-error-rgb);
+  --status-surface: var(--status-error-surface);
+  --status-text: var(--status-error-text);
+}
+.row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.subtle { color: var(--muted); font-size: 13px; }
+.hero .subtle { color: color-mix(in srgb, var(--status-text) 85%, var(--white)); }
+.state { margin-top: 2px; font-size: 28px; font-weight: 760; letter-spacing: .02em; }
+.hero-domain { display: flex; align-items: center; gap: 8px; color: var(--status-text); overflow-wrap: anywhere; }
+.dot {
+  --lamp-rgb: var(--status-rgb);
+  position: relative;
+  flex: 0 0 9px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 32% 28%, rgb(255 255 255 / .85),
+    rgb(var(--lamp-rgb)) 55%, rgb(var(--lamp-rgb) / .72) 100%);
+  box-shadow: 0 0 0 2px rgb(var(--lamp-rgb) / .22), 0 0 0 4px rgb(var(--lamp-rgb) / .09);
+}
+.hero:not([data-tone="stopped"]) .dot {
+  animation: status-breathe var(--status-breath-duration) ease-in-out infinite;
+}
+.hero:not([data-tone="stopped"]) .dot::before {
+  content: "";
+  position: absolute;
+  inset: -7px;
+  border-radius: 50%;
+  pointer-events: none;
+  background: radial-gradient(circle, rgb(var(--lamp-rgb) / .24),
+    rgb(var(--lamp-rgb) / .09) 48%, rgb(var(--lamp-rgb) / 0) 72%);
+  animation: status-glow var(--status-breath-duration) ease-in-out infinite;
+}
+@keyframes status-breathe {
+  0%, 100% { transform: scale(.86); opacity: .8; }
+  50% { transform: scale(1.12); opacity: 1; }
+}
+@keyframes status-glow {
+  0%, 100% { transform: scale(.82); opacity: .42; }
+  50% { transform: scale(1.16); opacity: 1; }
+}
+.switch {
+  flex: 0 0 49px;
+  width: 49px;
+  height: 29px;
+  border: 0;
+  border-radius: 20px;
+  padding: 3px;
+  background: var(--switch-off);
+  transition: background .16s;
+}
+.switch[aria-checked="true"] { background: var(--accent); }
+.switch::before {
+  content: "";
+  display: block;
+  width: 23px;
+  height: 23px;
+  border-radius: 50%;
+  background: var(--white);
+  box-shadow: 0 1px 3px var(--switch-shadow);
+  transition: transform .16s;
+}
+.switch[aria-checked="true"]::before {
+  transform: translateX(20px);
+  background: var(--accent-on);
+}
+.chip, .full-domain {
+  border: 1px solid var(--accent-border);
+  border-radius: 6px;
+  padding: 2px 7px;
+  background: var(--pale);
+  color: var(--accent);
+  font-size: 12px;
+}
+.chip { white-space: nowrap; }
+.address-value { flex: 1; min-width: 0; }
+.address {
+  display: block;
+  color: var(--accent);
+  font: 650 12px/1.55 ui-monospace, monospace;
+  white-space: nowrap;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+}
+.address::-webkit-scrollbar { display: none; }
+.address-line { display: flex; align-items: center; gap: 8px; padding-inline: 12px; }
+.icon-button {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+}
+.icon-button svg { width: 18px; height: 18px; }
+.icon-button:disabled { color: var(--disabled-ink); opacity: .55; }
+.copy-button { width: 28px; height: 28px; border-radius: 7px; }
+.copy-button svg { width: 15px; height: 15px; }
+.hero-domain #bound-domain { min-width: 0; }
+.hero-domain .copy-button { width: 26px; height: 26px; color: var(--status-text); }
+dl { margin: 0; display: grid; gap: 10px; }
+dt { color: var(--muted); }
+dd { margin: 0; text-align: right; font-weight: 640; overflow-wrap: anywhere; }
+dl .row + .row { border-top: 1px solid var(--line); padding-top: 9px; }
+.primary, .secondary, .choice {
+  padding: 7px 12px;
+  min-height: 43px;
+}
+.primary {
+  border: 0;
+  border-radius: 10px;
+  background: var(--accent);
+  color: var(--accent-on);
+  font-weight: 690;
+}
+.primary:disabled {
+  background: var(--accent-disabled);
+  color: var(--accent-on);
+  cursor: not-allowed;
+}
+.secondary, .choice { border-color: var(--line); background: var(--white); color: var(--field-ink); }
+.choice[aria-pressed="true"] { border-color: var(--accent); }
+.ghost { min-height: 34px; padding: 4px 7px; color: var(--accent-deep); }
+.loading-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+.loading-button[aria-busy="true"]::before {
+  content: "";
+  box-sizing: border-box;
+  flex: none;
+  width: 14px;
+  height: 14px;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: button-spin .75s linear infinite;
+}
+@keyframes button-spin {
+  to { transform: rotate(1turn); }
+}
+.wide { width: 100%; }
+.choices { display: grid; gap: 8px; }
+.settings-group {
+  display: grid;
+  min-width: 0;
+  padding-inline: 14px;
+  border-radius: 12px;
+  background: var(--white);
+  color: var(--settings-ink);
+}
+.settings-heading {
+  display: flex;
+  align-items: center;
+  min-height: 48px;
+  padding-block: 8px;
+  border-bottom: 1px solid var(--settings-divider);
+  font-weight: 700;
+}
+.setting-row {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  align-items: center;
+  column-gap: 12px;
+  min-height: 51px;
+  padding-block: 4px;
+  border-bottom: 1px solid var(--settings-divider);
+}
+.setting-row > .switch { justify-self: end; }
+.setting-row > label, .setting-copy > label, .picker-trigger > span:first-child { font-weight: 300; }
+.setting-row-with-description {
+  grid-template-columns: minmax(0, 1fr) auto;
+  padding-block: 8px;
+}
+.setting-description {
+  color: var(--settings-placeholder);
+  font-size: 13px;
+  font-weight: lighter;
+  line-height: 1.4;
+}
+.picker-trigger {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 42px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+}
+.setting-value {
+  display: inline-flex;
+  align-items: center;
+  justify-content: end;
+  min-width: 0;
+  gap: 8px;
+  color: var(--settings-muted);
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+.picker-trigger > span:first-child { flex: none; }
+.provider-symbols { position: absolute; }
+.provider-icon {
+  display: block;
+  flex: none;
+  width: 24px;
+  height: 24px;
+}
+.setting-value .provider-icon { width: 20px; height: 20px; }
+.chevron {
+  flex: 0 0 7px;
+  width: 7px;
+  height: 7px;
+  margin-right: 2px;
+  border: solid var(--settings-chevron);
+  border-width: 0 1.5px 1.5px 0;
+  transform: rotate(-45deg);
+}
+.settings-actions {
+  display: grid;
+  gap: 8px;
+  padding-block: 12px 14px;
+}
+.field-error {
+  grid-column: 2;
+  padding-bottom: 3px;
+  color: var(--settings-error);
+  font-size: 12px;
+  line-height: 1.4;
+  text-align: right;
+}
+.picker-trigger + .field-error { grid-column: 1 / -1; }
+.picker-option {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 52px;
+  padding: 8px 5px;
+  border: 0;
+  border-bottom: 1px solid var(--settings-divider);
+  border-radius: 0;
+  background: var(--white);
+  color: var(--settings-ink);
+  text-align: left;
+}
+@media (hover: hover) and (pointer: fine) {
+  .icon-button:not(:disabled, .credential-toggle):hover { color: var(--accent-deep); background: var(--pale); }
+  .hero-domain .copy-button:not(:disabled):hover {
+    color: var(--status-text);
+    background: rgb(var(--status-rgb) / .15);
+  }
+  .picker-option:not(:disabled):hover { background: var(--page-bg); }
+}
+.picker-option:focus-visible { outline-offset: -3px; }
+.picker-option:disabled { color: var(--settings-placeholder); cursor: not-allowed; }
+.picker-option:disabled .provider-icon { filter: saturate(.28); opacity: .78; }
+.picker-label {
+  min-width: 0;
+  flex: 1;
+  overflow-wrap: anywhere;
+}
+.picker-check {
+  flex: 0 0 10px;
+  width: 10px;
+  height: 6px;
+  margin-right: 3px;
+  border: solid var(--accent);
+  border-width: 0 0 2px 2px;
+  transform: rotate(-45deg);
+}
+.field { display: grid; gap: 5px; font-weight: 610; min-width: 0; }
+input:not([type=checkbox]), select {
+  width: 100%;
+  min-height: 43px;
+  padding: 8px 10px;
+  border: 1px solid var(--field-border);
+  border-radius: 9px;
+  background: var(--white);
+  color: var(--ink);
+}
+input:not([type=checkbox]):focus, select:focus {
+  border-color: var(--focus-color);
+  outline: none;
+  box-shadow: none;
+}
+input::placeholder { color: var(--muted); font-weight: 450; }
+.settings-group .setting-row input:not([type=hidden]) {
+  min-width: 0;
+  min-height: 40px;
+  padding: 4px 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--settings-input-ink);
+  caret-color: #000;
+  caret-shape: bar;
+  text-align: right;
+}
+.settings-group .setting-row input::placeholder, .setting-placeholder {
+  color: var(--settings-placeholder);
+  font-weight: 400;
+  opacity: 1;
+}
+.input-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.input-group input { flex: 1; }
+.input-group .suffix { color: var(--settings-muted); }
+.credential-input .credential-toggle {
+  width: 40px;
+  height: 40px;
+  margin-inline-end: -6px;
+  color: var(--settings-muted);
+}
+.credential-input .credential-toggle[data-revealed="true"] { color: var(--accent); }
+.credential-toggle .eye-slash { display: none; }
+.credential-toggle[data-revealed="true"] .eye-slash { display: block; }
+.seconds-control {
+  width: var(--seconds-control-width);
+  max-width: 100%;
+  justify-self: end;
+}
+.feedback {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--success);
+}
+.feedback.error { color: var(--settings-error); }
+.feedback .toast-icon { margin-top: 2px; }
+.full-domain {
+  padding: 8px 12px;
+  overflow-wrap: anywhere;
+  font-size: 14px;
+  text-align: center;
+}
+.settings-group > .full-domain { margin-block: 10px 14px; }
+.choices { grid-template-columns: repeat(3,minmax(0,1fr)); }
+.choices .choice { padding-inline: 4px; }
+.entries { list-style: none; margin: 0; padding: 0; }
+.entries li { padding: 9px 0; }
+.entries li + li { border-top: 1px solid var(--line); }
+.entry-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.entry-dot {
+  flex: 0 0 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--toast-warning-color);
+}
+.entries [data-severity="success"] .entry-dot { background: var(--toast-success-color); }
+.entries [data-severity="error"] .entry-dot { background: var(--toast-error-color); }
+.entry-meta time, .entry-duration { white-space: nowrap; }
+.entry-duration { margin-inline-start: auto; text-align: right; }
+.entries strong { font-size: 14px; }
+.entries p { color: var(--muted); font-size: 13px; line-height: 1.5; overflow-wrap: anywhere; }
+.toast {
+  position: fixed;
+  z-index: 10;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: max-content;
+  max-width: min(360px, calc(100vw - 32px));
+  border-radius: 8px;
+  padding: 9px 12px;
+  color: var(--ink);
+  background: var(--white);
+  box-shadow: var(--toast-shadow);
+  font-size: 14px;
+  overflow-wrap: anywhere;
+  pointer-events: none;
+}
+.toast[data-tone="error"], .feedback.error { --toast-icon-color: var(--toast-error-color); }
+.toast[data-tone="warning"] { --toast-icon-color: var(--toast-warning-color); }
+.toast-icon {
+  display: grid;
+  place-items: center;
+  flex: 0 0 16px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  color: var(--white);
+  background: var(--toast-icon-color, var(--toast-success-color));
+}
+.toast-icon svg { display: none; width: 11px; height: 11px; }
+.toast[data-tone="success"] .toast-success-icon,
+.feedback:not(.error) .toast-success-icon,
+.toast[data-tone="error"] .toast-error-icon,
+.feedback.error .toast-error-icon,
+.toast[data-tone="warning"] .toast-warning-icon { display: block; }
+dialog {
+  width: min(88vw, 365px);
+  color: var(--ink);
+  border: 1px solid var(--line);
+  border-radius: 15px;
+  padding: 17px;
+}
+dialog::backdrop { background: rgba(24, 36, 60, .42); }
+dialog .row { justify-content: end; }
+.bottom-sheet {
+  position: fixed;
+  inset: auto 0 0;
+  margin: 0;
+  width: 100%;
+  max-width: none;
+  max-height: min(78vh, 600px);
+  max-height: min(78dvh, 600px);
+  overflow: hidden;
+  padding: 13px 16px max(16px, env(safe-area-inset-bottom));
+  border-width: 1px 0 0;
+  border-radius: 18px 18px 0 0;
+  background: var(--white);
+}
+.bottom-sheet[open] {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  animation: sheet-arrive .22s cubic-bezier(.18, .76, .28, 1) both;
+}
+.sheet-heading { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.sheet-options {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  min-height: 0;
+  overflow-y: auto;
+  border-top: 1px solid var(--settings-divider);
+}
+@keyframes sheet-arrive { from { transform: translateY(100%); } to { transform: translateY(0); } }
+@media(max-width: 660px) {
+  .stage { max-width: none; padding: 0; }
+  .app {
+    min-height: 0;
+    height: 100vh;
+    height: 100dvh;
+  }
+  .panels { padding: 12px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before { transition: none !important; }
+  .dot, .dot::before, .bottom-sheet[open],
+  .loading-button[aria-busy="true"]::before { animation: none !important; }
+}
+</style>
+</head>
+<body>
+<svg class="provider-symbols" width="0" height="0" aria-hidden="true" focusable="false">
+  <symbol id="icon-credential-eye" viewBox="0 0 24 24">
+    <path d="M2 12s3.6-6 10-6 10 6 10 6-3.6 6-10 6-10-6-10-6Z"/>
+    <circle cx="12" cy="12" r="2.5"/>
+  </symbol>
+  <symbol id="provider-huawei" viewBox="0 0 1024 1024">
+    <path d="M374.5728 13.525333c20.309333-7.253333 41.130667-11.946667 62.464-13.525333 21.845333 32.256 29.141333 71.296 40.576 108.245333 7.808 40.618667 14.08 81.194667 15.104 122.325334 5.205333 28.629333 2.090667 57.258667 3.114667 86.4 1.578667 26.026667-2.048 52.053333-1.024 78.592 1.024 36.437333-4.181333 72.874667-3.626667 109.824-5.205333 23.466667-1.066667 47.872-8.362667 70.826666-8.832-4.693333-13.013333-14.08-18.730666-21.888A2468.864 2468.864 0 0 1 349.570133 366.933333c-33.792-67.669333-69.717333-137.898667-72.832-214.954666C274.135467 91.093333 317.314133 32.853333 374.530133 13.525333z m213.930667-10.410666c5.205333-3.114667 10.922667 0.512 16.64 1.066666 28.117333 6.229333 58.282667 10.410667 82.261333 28.586667 22.357333 18.773333 43.178667 41.130667 51.498667 69.76 11.946667 34.346667 7.296 71.850667 0 106.709333-10.410667 44.245333-30.165333 85.888-49.92 126.976-6.272 12.501333-15.146667 23.978667-20.864 36.992-11.434667 25.472-26.538667 49.408-41.130667 72.832-22.869333 39.594667-48.384 77.056-73.386667 115.029334-3.626667 4.181333-8.32 14.592-14.549333 7.808a2047.658667 2047.658667 0 0 1-8.874667-125.952c-5.717333-53.589333-2.56-107.733333-3.114666-161.877334 3.669333-35.882667 4.181333-71.808 8.32-107.221333 8.362667-42.154667 14.08-84.821333 27.093333-125.952 9.386667-14.08 10.922667-34.858667 26.026667-44.757333zM153.9008 138.453333c5.717333-2.602667 8.32 4.693333 11.946667 7.808a2380.416 2380.416 0 0 1 259.2 415.36c5.717333 11.946667 13.013333 23.893333 14.08 37.461334-13.013333-3.114667-23.936-9.898667-35.925334-15.616a2183.936 2183.936 0 0 1-194.645333-111.36c-23.466667-16.682667-47.36-32.853333-68.181333-52.608-41.642667-29.141333-70.272-78.592-66.645334-130.133334 4.181333-59.306667 41.130667-109.269333 80.170667-150.912z m709.930667-0.512h8.32c18.773333 24.448 40.618667 47.36 54.144 75.477334 14.549333 25.472 21.845333 54.613333 23.936 83.797333-1.578667 32.256-11.946667 65.578667-33.28 90.538667-14.08 12.501333-25.002667 27.605333-39.594667 38.528-77.568 61.44-164.992 109.312-252.970667 155.093333-13.013333 6.784-25.472 16.128-40.064 17.706667 2.602667-18.218667 13.525333-32.810667 20.821334-49.450667a2312.149333 2312.149333 0 0 1 207.658666-341.973333c16.170667-23.424 34.901333-45.781333 51.029334-69.717334zM3.970133 411.690667c2.133333-4.138667 1.578667-11.434667 7.296-12.458667 10.410667 2.048 19.285333 8.832 28.629334 14.037333 124.416 67.669333 248.277333 136.874667 367.488 213.376 4.138667 2.133333 6.229333 6.272 7.808 10.965334-78.634667 1.024-157.226667 1.024-235.264 0.512-47.36 0.512-92.672-21.333333-125.994667-54.144-28.586667-31.232-50.474667-70.784-53.077333-113.962667 0-19.285333-2.090667-39.04 3.114666-58.325333z m988.416-3.626667c7.808-4.693333 15.616-9.386667 25.002667-8.32 1.536 18.218667 5.205333 36.437333 5.717333 54.613333-3.114667 22.4-2.602667 45.824-12.501333 66.645334-8.32 18.218667-16.64 36.949333-31.232 51.029333-15.616 14.549333-28.586667 32.256-48.384 41.6-21.888 16.64-49.962667 21.888-77.056 23.466667-82.218667 0.512-164.992 0.512-247.210667 0 2.090667-4.181333 4.138667-7.850667 8.32-9.898667 122.325333-78.592 249.813333-149.376 377.344-219.136zM179.970133 671.445333c44.245333-4.693333 89.002667-0.554667 133.248-5.76 31.744-1.024 63.488-2.56 94.72 0-8.32 13.568-23.466667 19.797333-35.413333 28.629334-33.28 23.936-68.693333 44.8-105.642667 62.976-36.437333 18.218667-82.261333 11.477333-113.493333-14.037334-25.472-17.706667-43.178667-43.178667-59.818667-68.693333 28.586667-3.669333 57.770667-1.066667 86.4-3.114667z m434.602667-5.76c31.232-2.048 62.976-1.024 94.72 0.554667 42.666667 4.693333 86.4 0.512 129.066667 5.205333 30.208 2.56 60.373333 0 90.581333 3.626667-10.410667 21.845333-26.538667 40.576-44.245333 57.258667-27.050667 28.117333-68.693333 42.154667-106.666667 33.834666-33.365333-10.410667-62.506667-31.232-92.16-48.426666-16.128-9.898667-31.232-20.821333-47.36-31.232-8.874667-6.229333-18.218667-11.946667-23.936-20.821334z" fill="#C71F1E"/>
+    <path d="M0.343467 855.68c12.501333 0.512 24.448 0.512 36.949333 0 0 21.845333-1.024 44.245333 0.512 66.602667a1124.693333 1124.693333 0 0 0 83.797333 0c1.578667-21.845333 0.554667-44.202667 0.554667-66.090667 12.458667 0.512 24.448 0.512 36.949333 0a8444.586667 8444.586667 0 0 0 0 162.389333h-36.949333c0-22.357333 1.024-44.245333-0.554667-66.602666a1124.693333 1124.693333 0 0 0-83.797333 0c-1.024 22.357333-0.512 44.245333-0.512 66.602666H0.343467c0.512-54.613333 0.512-108.8 0-162.901333z m188.416 0c12.501333 0.512 24.448 0.512 36.949333 0 1.066667 34.858667-0.512 69.76 0.512 105.130667 0 17.194667 13.525333 34.858667 31.744 34.858666 18.218667 3.157333 44.245333-2.048 48.426667-23.381333 1.578667-38.528 0.512-77.568 0.512-116.608 12.501333 0.512 24.448 0.512 36.949333 0 0.512 34.858667 0.512 69.76 0.512 104.618667-0.512 13.525333 0 29.653333-10.922667 39.552-19.754667 19.242667-48.896 21.845333-74.922666 20.309333-16.170667-1.578667-34.346667-2.090667-47.36-13.013333a50.56 50.56 0 0 1-21.333334-43.221334c-1.066667-35.882667 0-71.808-1.066666-108.245333z m239.402666 0h40.106667c4.693333 17.706667 15.616 32.256 21.333333 49.450667 14.592 23.424 20.309333 50.986667 35.413334 73.898666 6.229333 12.501333 11.946667 25.002667 15.573333 39.04-12.458667 0-24.96 1.024-37.461333-0.512-8.32-10.922667-10.410667-25.514667-17.706667-36.949333a346.581333 346.581333 0 0 0-77.013333 0.512c-6.229333 11.946667-10.410667 25.514667-18.218667 36.949333-11.434667 1.024-22.912 0.512-34.346667 0.512 1.024-15.616 8.832-28.586667 16.64-41.088 7.808-19.797333 17.706667-38.528 25.002667-58.325333 14.08-19.242667 18.218667-43.178667 30.72-63.488z m-7.765333 93.696c16.64 4.138667 35.370667 4.138667 52.565333 0-8.874667-19.797333-15.104-40.106667-26.581333-58.325333-11.946667 17.706667-17.152 39.04-26.026667 58.325333z m101.461333-93.696h40.618667c3.114667 15.616 6.741333 31.232 13.013333 45.781333 9.898667 25.514667 13.525333 52.608 24.448 77.568l4.693334-1.536c4.181333-33.834667 20.309333-65.066667 24.448-98.389333 1.578667-7.808 4.181333-15.616 6.784-22.912h44.245333c9.898667 32.298667 21.845333 63.488 29.653333 96.298667 3.114667 9.898667 4.181333 21.845333 13.525334 27.605333 8.32-41.642667 25.514667-81.237333 35.925333-122.325333 12.501333-3.114667 26.026667-0.512 39.552-1.578667-18.773333 54.144-37.973333 107.733333-55.68 162.389333-14.592 0-29.141333 1.066667-43.733333 0-4.693333-2.56-4.693333-8.832-6.229334-13.013333-11.477333-34.346667-19.285333-70.272-33.834666-103.04-5.205333 9.386667-6.784 19.754667-9.386667 29.653333-7.808 28.629333-16.128 57.258667-23.424 85.888-15.104 0.512-29.653333 0.512-44.757333 0-12.501333-20.821333-14.549333-45.781333-26.538667-66.602666-10.922667-27.605333-17.194667-57.813333-31.232-83.797334a32.256 32.256 0 0 1-2.090667-11.989333z m303.957334 21.333333c8.874667-13.013333 23.978667-20.821333 40.106666-20.821333 28.586667-0.512 56.746667 0 85.333334-0.512v29.141333c-24.448-0.512-48.896-1.024-73.386667 0-18.218667 2.090667-29.653333 19.242667-30.72 36.949334 34.389333 2.090667 69.248 0.512 104.106667 0.512v29.184a2221.952 2221.952 0 0 0-101.973334 0c-4.181333 16.64 5.162667 34.346667 22.357334 38.485333 26.538667 4.693333 53.077333 1.066667 79.616 2.602667v25.514666c-28.586667 0-56.746667 0.512-85.333334 0a65.92 65.92 0 0 1-56.746666-50.986666c-5.205333-30.72-4.181333-65.621333 16.64-90.026667z m159.274666-18.218666c12.501333-2.56 25.514667-2.56 37.973334-0.512 2.133333 30.208 0.554667 60.373333 1.066666 90.581333-0.512 23.424 1.578667 46.805333-1.536 69.717333h-37.504c0.512-53.589333 0.512-106.666667 0-159.786666z" fill="#000000"/>
+  </symbol>
+  <symbol id="provider-alibaba" viewBox="0 0 1024 1024">
+    <path d="M853.504 192.768A170.496 170.496 0 0 1 1024 363.264v297.472a170.496 170.496 0 0 1-170.496 170.496H627.712l54.4768-77.056 164.5568-50.432a71.168 71.168 0 0 0 49.7152-68.3008V388.5568a71.168 71.168 0 0 0-49.664-68.3008l-164.608-50.432-54.4768-77.056z m-457.2672 0L341.76 269.824l-164.5568 50.432A71.168 71.168 0 0 0 127.488 388.608v246.8864a71.168 71.168 0 0 0 49.664 68.3008l164.608 50.432 54.4768 77.056H170.496A170.496 170.496 0 0 1 0 660.736v-297.472a170.496 170.496 0 0 1 170.496-170.496H396.288z m286.3616 279.04v76.9536H341.4016V471.8592h341.1968z" fill="#FE6A00"/>
+  </symbol>
+  <symbol id="provider-tencent" viewBox="0 0 1024 1024">
+    <path d="M879.689143 743.936c-15.945143 16.237714-47.835429 40.521143-103.570286 40.521143H433.590857c103.570286-101.302857 191.195429-186.441143 199.168-194.56a623.177143 623.177143 0 0 1 47.762286-44.617143c39.862857-36.425143 71.68-40.448 99.547428-40.448 39.862857 0 71.68 16.164571 99.620572 40.521143 55.734857 52.662857 55.734857 145.92 0 198.582857z m67.657143-263.460571a220.745143 220.745143 0 0 0-163.254857-72.996572c-55.808 0-103.570286 20.260571-147.382858 52.662857-15.945143 16.310857-39.789714 32.475429-59.757714 56.832-15.872 16.164571-358.4 356.717714-358.4 356.717715 19.894857 4.022857 43.885714 4.022857 63.707429 4.022857h434.102857c31.890286 0 55.734857 0 79.725714-4.022857a242.688 242.688 0 0 0 147.309714-64.877715c91.574857-89.234286 91.574857-239.177143 3.949715-328.338285z" fill="#00A3FF"/>
+    <path d="M381.366857 456.557714c-44.032-32.694857-88.137143-49.005714-140.141714-49.005714a221.622857 221.622857 0 0 0-164.205714 73.581714 241.737143 241.737143 0 0 0 4.022857 335.286857c40.009143 36.790857 80.091429 57.197714 128.146285 61.293715l92.086858-89.965715h-52.077715c-52.077714-4.096-84.114286-20.48-104.082285-40.886857a149.211429 149.211429 0 0 1-4.022858-204.434285c28.013714-28.598857 60.050286-40.886857 100.132572-40.886858 23.990857 0 60.050286 4.096 96.109714 40.96 16.018286 16.310857 60.050286 49.005714 76.068572 65.389715h4.022857l60.050285-61.366857v-4.096c-28.013714-28.598857-72.118857-65.389714-96.109714-85.869715" fill="#00C8DC"/>
+    <path d="M805.449143 351.232A316.342857 316.342857 0 0 0 509.44 146.285714c-158.134857 0-283.794286 116.516571-308.150857 261.193143 12.141714 0 24.356571-3.949714 40.521143-3.949714 16.237714 0 36.571429 3.949714 52.736 3.949714 20.260571-100.425143 109.494857-172.763429 214.893714-172.763428a224.548571 224.548571 0 0 1 202.752 128.585142s4.022857 4.022857 4.022857 0c28.379429-4.022857 60.854857-12.068571 89.234286-12.068571 0 4.022857 0 4.022857 0 0" fill="#006EFF"/>
+  </symbol>
+  <symbol id="provider-jd" viewBox="0 0 1024 1024">
+    <path d="M921.643 314.005c-25.271-42.735-62.327-78.464-107.158-103.324-42.759-23.711-90.384-36.502-137.725-36.991-43.927-0.47-76.924 10.192-87.771 13.69-93.927 30.296-143.552 108.178-164.743 141.436-1.316 2.066-2.51 3.941-3.587 5.597-80.184 123.259-215.563 185.315-288.294 218.653-7.708 3.533-14.996 6.875-21.495 9.953a158.17 158.17 0 0 1-5.966-43.139c0-87.43 71.129-158.559 158.558-158.559 16.097 0 31.963 2.396 47.159 7.122 17.247 5.364 33.347 13.602 47.852 24.483l38.406-51.195c-20.373-15.284-43-26.857-67.252-34.4-21.356-6.642-43.618-10.01-66.166-10.01-59.447 0-115.336 23.15-157.373 65.186-42.035 42.036-65.186 97.925-65.186 157.373s23.15 115.337 65.186 157.372 97.925 65.186 157.372 65.186c29.326 0 58.478-8.476 77.769-14.084 43.779-12.729 85.187-32.837 123.074-59.766l-37.078-52.166c-32.035 22.77-66.979 39.752-103.863 50.477-15.805 4.595-39.69 11.539-59.901 11.539-49.574 0-93.9-22.874-122.997-58.616 5.615-2.638 11.932-5.534 18.569-8.576 78.624-36.039 224.974-103.123 315.273-241.932a808.03 808.03 0 0 0 3.915-6.104c18.965-29.764 58.428-91.698 130.414-114.916 8.397-2.708 33.946-10.961 67.466-10.604 70.518 0.728 139.114 36.602 179.868 92.787-12.422-0.41-22.892-0.827-31.989-1.19-32.853-1.31-49.342-1.969-71.716 1.658-27.808 4.506-54.65 13.801-79.783 27.627-32.979 18.143-53.658 39.705-64.768 51.289-48.832 50.92-95.017 103.594-125.162 138.815l48.623 41.615c29.608-34.594 74.936-86.292 122.73-136.132 9.962-10.388 25.017-26.085 49.424-39.513 6.971-3.835 28.186-15.505 59.172-20.526 16.022-2.595 27.705-2.13 58.929-0.884 15.059 0.601 33.8 1.348 58.979 1.975 2.332 0.058 4.67 0.112 7.009 0.165 5.128 17.452 9.005 38.333 9.005 61.62 0 120.924-98.688 219.303-219.991 219.303-42.748 0-84.183-12.225-119.823-35.35a220.943 220.943 0 0 1-9.294-6.374c-18.879-13.668-37.252-32.803-54.612-56.872-11.153-15.466-16.581-25.38-22.867-36.859-7.446-13.601-15.886-29.016-34.147-53.613a600.635 600.635 0 0 0-18.169-23.258l-49.443 40.637a535.992 535.992 0 0 1 16.226 20.77c15.631 21.055 22.318 33.269 29.398 46.199 6.696 12.23 13.62 24.876 27.095 43.561 21.359 29.617 44.57 53.598 68.99 71.277a286.918 286.918 0 0 0 11.986 8.221c46.04 29.872 99.521 45.662 154.662 45.662 75.84 0 147.146-29.458 200.781-82.946 53.658-53.513 83.21-124.667 83.21-200.356-0.002-69.882-27.121-123.279-38.781-142.993z" fill="#e2251b"/>
+  </symbol>
+</svg>
+<div class="stage">
+  <main class="app">
+    <div class="panels" id="tab-panels">
+      <section id="overview" class="panel" role="tabpanel" aria-labelledby="tab-overview">
+        <div id="status-hero" class="hero" data-tone="stopped">
+          <div class="row">
+            <div><p class="subtle">自动同步</p><p id="run-state" class="state" role="status">已停止</p></div>
+            <button id="run-toggle" class="switch" role="switch" aria-checked="false" aria-label="自动同步"></button>
+          </div>
+          <p class="hero-domain">
+            <span id="state-dot" class="dot" aria-hidden="true"></span>
+            <span id="bound-domain">未绑定域名</span>
+            <button id="copy-domain" class="icon-button copy-button" type="button" hidden title="复制域名" aria-label="复制域名">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M15 6V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h1"/>
+                <rect x="8" y="8" width="13" height="13" rx="2"/>
+              </svg>
+            </button>
+          </p>
+        </div>
+
+        <div class="section-group">
+          <div class="row section-heading"><h2>当前 IPv6</h2><span class="chip">移动数据 · INTERNET</span></div>
+          <div class="card address-line">
+            <div class="address-value"><code id="address" class="address"></code></div>
+            <button id="copy-address" class="icon-button copy-button" type="button" title="复制 IPv6" aria-label="复制 IPv6">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M15 6V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h1"/>
+                <rect x="8" y="8" width="13" height="13" rx="2"/>
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        <div class="card">
+          <dl>
+            <div class="row"><dt>检查间隔</dt><dd id="summary-interval"></dd></div>
+            <div class="row"><dt>最近同步</dt><dd id="summary-sync">尚未同步</dd></div>
+          </dl>
+        </div>
+        <p class="subtle" id="operation-reason" role="status" hidden></p>
+        <button id="check" type="button" class="primary wide loading-button" disabled>立即检查</button>
+      </section>
+
+      <section id="config" class="panel" role="tabpanel" aria-labelledby="tab-config" hidden>
+        <div class="settings-group">
+          <div class="setting-row">
+            <button id="choose-provider" type="button" class="picker-trigger" aria-haspopup="dialog" aria-controls="picker-sheet">
+              <span>云服务商</span>
+              <span class="setting-value">
+                <svg class="provider-icon" aria-hidden="true" focusable="false"><use href="#provider-huawei"/></svg>
+                华为云<span class="chevron" aria-hidden="true"></span>
+              </span>
+            </button>
+          </div>
+        </div>
+
+        <form id="credentials" class="settings-group" aria-labelledby="credentials-heading" autocomplete="off" novalidate>
+          <h2 id="credentials-heading" class="settings-heading">访问密钥</h2>
+          <div class="setting-row">
+            <label for="ak">AK</label>
+            <div class="input-group credential-input">
+              <input id="ak" type="password" placeholder="AK" required maxlength="512" autocomplete="off" spellcheck="false" autocapitalize="none" autocorrect="off" aria-describedby="ak-error">
+              <button class="icon-button credential-toggle" data-credential="ak" type="button" aria-label="显示 AK" aria-controls="ak">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <use href="#icon-credential-eye"/>
+                  <path class="eye-slash" d="m4 4 16 16" stroke="var(--white)" stroke-width="4"/>
+                  <path class="eye-slash" d="m4 4 16 16"/>
+                </svg>
+              </button>
+            </div>
+            <p id="ak-error" class="field-error" hidden></p>
+          </div>
+          <div class="setting-row">
+            <label for="sk">SK</label>
+            <div class="input-group credential-input">
+              <input id="sk" type="password" placeholder="SK" required maxlength="512" autocomplete="off" spellcheck="false" autocapitalize="none" autocorrect="off" aria-describedby="sk-error">
+              <button class="icon-button credential-toggle" data-credential="sk" type="button" aria-label="显示 SK" aria-controls="sk">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <use href="#icon-credential-eye"/>
+                  <path class="eye-slash" d="m4 4 16 16" stroke="var(--white)" stroke-width="4"/>
+                  <path class="eye-slash" d="m4 4 16 16"/>
+                </svg>
+              </button>
+            </div>
+            <p id="sk-error" class="field-error" hidden></p>
+          </div>
+          <div class="settings-actions">
+            <button id="fetch-zones" type="submit" class="primary wide loading-button">确定</button>
+            <p id="key-result" class="feedback" role="status" hidden><span id="key-result-message"></span></p>
+          </div>
+        </form>
+
+        <form id="settings" class="stack" novalidate>
+          <section class="settings-group" aria-labelledby="domain-heading">
+            <h2 id="domain-heading" class="settings-heading">域名绑定</h2>
+            <input id="zone" type="hidden">
+            <div class="setting-row">
+              <button id="choose-zone" type="button" class="picker-trigger" aria-haspopup="dialog" aria-controls="picker-sheet" aria-describedby="choose-zone-error">
+                <span>公网域名</span>
+                <span class="setting-value"><span id="zone-value" class="setting-placeholder">选择域名</span><span class="chevron" aria-hidden="true"></span></span>
+              </button>
+              <p id="choose-zone-error" class="field-error" hidden></p>
+            </div>
+            <div class="setting-row">
+              <label for="prefix">子域名前缀</label>
+              <input id="prefix" maxlength="63" placeholder="例如 phone" required spellcheck="false" aria-describedby="prefix-error">
+              <p id="prefix-error" class="field-error" hidden></p>
+            </div>
+            <div class="setting-row">
+              <label for="ttl">TTL</label>
+              <span class="input-group seconds-control">
+                <input id="ttl" type="text" inputmode="numeric" pattern="[0-9]+" required aria-describedby="ttl-error">
+                <span class="suffix">s</span>
+              </span>
+              <p id="ttl-error" class="field-error" hidden></p>
+            </div>
+            <p class="full-domain" id="full-domain" aria-live="polite" hidden></p>
+          </section>
+
+          <section class="settings-group" aria-labelledby="other-heading">
+            <h2 id="other-heading" class="settings-heading">其他</h2>
+            <div class="setting-row">
+              <label for="interval">IPv6 检查间隔</label>
+              <span class="input-group seconds-control">
+                <input id="interval" type="text" inputmode="numeric" pattern="[0-9]+" required aria-describedby="interval-error">
+                <span class="suffix">s</span>
+              </span>
+              <p id="interval-error" class="field-error" hidden></p>
+            </div>
+            <div class="setting-row setting-row-with-description">
+              <div class="setting-copy">
+                <label for="keep-data-on">始终开启流量</label>
+                <p id="keep-data-on-description" class="setting-description">开启后，检查期间会重新打开移动数据开关</p>
+              </div>
+              <button id="keep-data-on" type="button" class="switch" role="switch" aria-checked="false" aria-describedby="keep-data-on-description"></button>
+            </div>
+            <div class="setting-row">
+              <label for="airplane">飞行模式兜底</label>
+              <button id="airplane" type="button" class="switch" role="switch" aria-checked="false" aria-label="飞行模式兜底"></button>
+            </div>
+          </section>
+
+          <button type="submit" class="primary wide">保存配置</button>
+        </form>
+      </section>
+
+      <section id="logs" class="panel" role="tabpanel" aria-labelledby="tab-logs" hidden>
+        <div class="section-group">
+          <div class="row section-heading"><h2>记录日志</h2><button id="logging" class="switch" role="switch" aria-checked="true" aria-label="记录日志"></button></div>
+          <div class="card stack">
+            <p class="subtle">保留时长</p>
+            <div class="choices" aria-label="日志保留时长">
+              <button class="choice" data-days="1" aria-pressed="false">1 天</button>
+              <button class="choice" data-days="3" aria-pressed="true">3 天</button>
+              <button class="choice" data-days="7" aria-pressed="false">7 天</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="section-group">
+          <h2 class="section-heading">运行记录</h2>
+          <div class="card stack">
+            <ol id="entries" class="entries"></ol>
+            <p id="empty-logs" class="subtle" hidden>暂无运行记录</p>
+            <button id="more-logs" class="secondary wide" type="button" hidden>加载更多</button>
+          </div>
+        </div>
+      </section>
+    </div>
+    <nav class="tabs" role="tablist" aria-label="模块页面">
+      <button id="tab-overview" role="tab" aria-controls="overview" aria-selected="true">概览</button>
+      <button id="tab-config" role="tab" aria-controls="config" aria-selected="false">配置</button>
+      <button id="tab-logs" role="tab" aria-controls="logs" aria-selected="false">日志</button>
+    </nav>
+  </main>
+
+</div>
+<div id="toast" class="toast" role="status" data-tone="success" hidden>
+  <span class="toast-icon" aria-hidden="true">
+    <svg class="toast-success-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.35" stroke-linecap="round" stroke-linejoin="round">
+      <path d="m5 12 4 4 10-10"/>
+    </svg>
+    <svg class="toast-warning-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.7" stroke-linecap="round">
+      <path d="M12 6v7m0 4h.01"/>
+    </svg>
+    <svg class="toast-error-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.35" stroke-linecap="round">
+      <path d="m6 6 12 12M18 6 6 18"/>
+    </svg>
+  </span>
+  <span id="toast-message"></span>
+</div>
+<dialog id="picker-sheet" class="bottom-sheet" aria-labelledby="picker-title" closedby="closerequest">
+  <div class="sheet-heading">
+    <h2 id="picker-title"></h2>
+    <button id="close-picker" class="icon-button" type="button" aria-label="关闭选择" title="关闭选择" autofocus>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true">
+        <path d="m6 6 12 12M18 6 6 18"/>
+      </svg>
+    </button>
+  </div>
+  <div id="picker-options" class="sheet-options"></div>
+</dialog>
+<dialog id="reuse">
+  <form method="dialog" class="stack">
+    <h2>选用已有 AAAA 记录</h2>
+    <p id="reuse-domain" class="full-domain"></p>
+    <p class="subtle">同步时会更新此记录的 IPv6 和 TTL。</p>
+    <div class="row"><button value="cancel" class="secondary">返回</button><button value="use" class="primary">选用并保存</button></div>
+  </form>
+</dialog>
+
+<script src="view.js" defer></script>
+<script src="app.js" defer></script>
+</body>
+</html>

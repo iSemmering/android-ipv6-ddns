@@ -1,0 +1,6 @@
+id=ipv6_ddns
+name=IPv6 DDNS
+version=1.0.0
+versionCode=100
+author=iSemmering
+description=⚪ 等待后台启动 · 华为云 AAAA
