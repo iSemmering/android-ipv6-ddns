@@ -1,6 +1,8 @@
 const el = (id) => document.getElementById(id);
 const tabList = document.querySelector('.tabs');
 const tabs = Array.from(tabList.querySelectorAll('[role="tab"]'));
+const pickerSheet = el('picker-sheet');
+const pickerGrab = el('picker-grab');
 const periods = Array.from(document.querySelectorAll('[data-days]'));
 const secondsLimits = { ttl: [1, 2147483647], interval: [2, 2147483] };
 const providerOptions = [
@@ -11,6 +13,7 @@ const providerOptions = [
 ];
 let toastTimer;
 let queryBusy = false;
+let pickerDrag = null;
 
 function toast(message, tone = 'success') {
   clearTimeout(toastTimer);
@@ -33,9 +36,12 @@ function openTab(name) {
   }
 }
 
-function openPicker(title, options, onSelect) {
-  const sheet = el('picker-sheet');
-  el('picker-title').textContent = title;
+function openPicker(kind, options, onSelect) {
+  const isProvider = kind === 'provider';
+  pickerSheet.dataset.kind = kind;
+  pickerSheet.setAttribute('aria-label', isProvider ? '云服务商' : el('picker-title').textContent);
+  el('picker-heading').hidden = isProvider;
+  pickerGrab.hidden = !isProvider;
   const rows = options.map(({ label, icon, value = label, disabled = false, selected = false }) => {
     const row = document.createElement('button');
     row.type = 'button';
@@ -65,13 +71,60 @@ function openPicker(title, options, onSelect) {
     }
     row.addEventListener('click', () => {
       onSelect?.(value);
-      sheet.close();
+      pickerSheet.close();
     });
     return row;
   });
   el('picker-options').replaceChildren(...rows);
-  sheet.showModal();
+  pickerSheet.showModal();
 }
+
+pickerGrab.addEventListener('pointerdown', event => {
+  if (event.button !== 0 || pickerDrag) return;
+  pickerDrag = { pointer: event.pointerId, start: event.clientY, distance: 0, frame: 0 };
+  pickerGrab.setPointerCapture(event.pointerId);
+  pickerSheet.setAttribute('data-dragged', '');
+  pickerSheet.setAttribute('data-dragging', '');
+});
+
+pickerGrab.addEventListener('pointermove', event => {
+  const drag = pickerDrag;
+  if (!drag || drag.pointer !== event.pointerId) return;
+  drag.distance = Math.max(0, event.clientY - drag.start);
+  if (drag.frame) return;
+  drag.frame = requestAnimationFrame(() => {
+    drag.frame = 0;
+    pickerSheet.style.transform = 'translate3d(0, ' + drag.distance + 'px, 0)';
+  });
+});
+
+function resetPickerDrag() {
+  const drag = pickerDrag;
+  if (!drag) return;
+  pickerDrag = null;
+  cancelAnimationFrame(drag.frame);
+  if (pickerGrab.hasPointerCapture(drag.pointer)) pickerGrab.releasePointerCapture(drag.pointer);
+  pickerSheet.removeAttribute('data-dragging');
+  pickerSheet.style.removeProperty('transform');
+}
+
+function endPickerDrag(event) {
+  if (!pickerDrag || pickerDrag.pointer !== event.pointerId) return;
+  const shouldClose = event.type === 'pointerup' && event.clientY - pickerDrag.start >= 64;
+  resetPickerDrag();
+  if (shouldClose) pickerSheet.close();
+}
+
+for (const name of ['pointerup', 'pointercancel', 'lostpointercapture']) {
+  pickerGrab.addEventListener(name, endPickerDrag);
+}
+pickerGrab.addEventListener('click', event => {
+  if (event.detail === 0) pickerSheet.close();
+});
+pickerSheet.addEventListener('close', () => {
+  resetPickerDrag();
+  pickerSheet.removeAttribute('data-dragged');
+});
 
 function secondsError(id, value) {
   const [min, max] = secondsLimits[id];

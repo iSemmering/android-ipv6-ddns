@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"ipv6-ddns/internal/dns"
@@ -82,6 +83,7 @@ type View struct {
 	Reason                                 string
 	Busy                                   bool
 	ManualPending                          bool
+	LogHead                                map[string]int64
 }
 
 func loadConfig(dir string) (Config, error) {
@@ -186,6 +188,14 @@ type logStore struct {
 	loc               *time.Location
 	mu                sync.Mutex
 	lastPrune, lastID int64
+	lastInfo          atomic.Int64
+	lastWarning       atomic.Int64
+	lastError         atomic.Int64
+}
+
+func (s *logStore) heads() map[string]int64 {
+	info, warning, failure := s.lastInfo.Load(), s.lastWarning.Load(), s.lastError.Load()
+	return map[string]int64{"all": max(info, warning, failure), "info": info, "warning": warning, "error": failure}
 }
 
 func (s *logStore) append(days int, action, outcome, reason string, started time.Time) error {
@@ -212,8 +222,18 @@ func (s *logStore) append(days int, action, outcome, reason string, started time
 		return err
 	}
 	_, err = f.Write(append(line, '\n'))
-	closeErr := f.Close()
-	return errors.Join(err, closeErr)
+	if err := errors.Join(err, f.Close()); err != nil {
+		return err
+	}
+	switch entry.Severity {
+	case "success":
+		s.lastInfo.Store(id)
+	case "error":
+		s.lastError.Store(id)
+	default:
+		s.lastWarning.Store(id)
+	}
+	return nil
 }
 
 func (s *logStore) prune(days int) error {
@@ -283,13 +303,25 @@ func readEntries(path string) ([]Entry, error) {
 	return rows, scanner.Err()
 }
 
-func (s *logStore) page(days int, cursor string) ([]Entry, string, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+func (s *logStore) page(days int, level, cursor string) ([]Entry, string, error) {
+	var severity string
+	switch level {
+	case "", "all":
+	case "info":
+		severity = "success"
+	case "warning":
+		severity = "pending"
+	case "error":
+		severity = "error"
+	default:
+		return nil, "", errors.New("日志类型无效")
+	}
 	before, err := strconv.ParseInt(cursor, 10, 64)
 	if cursor != "" && err != nil {
 		return nil, "", errors.New("日志分页参数无效")
 	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	minID := time.Now().Add(-time.Duration(days) * 24 * time.Hour).UnixMicro()
 	files, err := os.ReadDir(s.dir)
 	if err != nil {
@@ -309,7 +341,7 @@ func (s *logStore) page(days int, cursor string) ([]Entry, string, error) {
 		}
 		for i := len(entries) - 1; i >= 0; i-- {
 			row := entries[i]
-			if row.ID >= minID && (before == 0 || row.ID < before) {
+			if row.ID >= minID && (before == 0 || row.ID < before) && (severity == "" || row.Severity == severity) {
 				if len(rows) == 100 {
 					return rows, strconv.FormatInt(rows[len(rows)-1].ID, 10), nil
 				}

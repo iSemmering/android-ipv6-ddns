@@ -115,7 +115,12 @@ h2 { font-size: 16px; font-weight: 740; }
   color: var(--muted);
   font-weight: 650;
 }
-.tabs button { transition: color 180ms ease; }
+.tabs button {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+  transition: color 180ms ease;
+}
 .tabs button[aria-selected="true"] { color: var(--accent-on); }
 .choice[aria-pressed="true"] {
   background: var(--pale);
@@ -128,9 +133,9 @@ h2 { font-size: 16px; font-weight: 740; }
   overflow-y: auto;
   overscroll-behavior-y: contain;
   scrollbar-width: thin;
-  padding: 16px;
 }
 .panel, .stack { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; }
+.panel { padding: 16px; }
 .section-group { display: grid; grid-template-columns: minmax(0, 1fr); gap: 7px; min-width: 0; }
 .section-heading { padding-inline: 2px; }
 .card, .hero { padding: 15px; border-radius: 16px; }
@@ -312,7 +317,6 @@ dl .row + .row { border-top: 1px solid var(--line); padding-top: 9px; }
   to { transform: rotate(1turn); }
 }
 .wide { width: 100%; }
-.choices { display: grid; gap: 8px; }
 .settings-group {
   display: grid;
   min-width: 0;
@@ -516,11 +520,94 @@ input::placeholder { color: var(--muted); font-weight: 450; }
   text-align: center;
 }
 .settings-group > .full-domain { margin-block: 10px 14px; }
-.choices { grid-template-columns: repeat(3,minmax(0,1fr)); }
-.choices .choice { padding-inline: 4px; }
+.log-retention {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  padding: 8px 12px;
+}
+.log-periods { display: flex; flex-wrap: wrap; gap: 6px; }
+.log-periods .choice {
+  min-width: 70px;
+  min-height: 30px;
+  padding: 2px 7px;
+  border-radius: 6px;
+  font-size: 12px;
+  line-height: 16px;
+}
+.log-card { padding: 0 14px 3px; overflow-anchor: none; }
+.log-type-bar {
+  position: sticky;
+  z-index: 2;
+  top: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  min-height: 42px;
+  margin-inline: -14px;
+  padding: 4px 10px;
+  border-bottom: 1px solid var(--line);
+  border-radius: 15px 15px 0 0;
+  background: var(--white);
+}
+.log-types { display: flex; flex-wrap: wrap; gap: 2px; }
+.log-type {
+  --type-dot: #8a96aa;
+  --type-ink: var(--field-ink);
+  --type-bg: var(--disabled-bg);
+  --type-border: var(--field-border);
+  --focus-color: var(--type-ink);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 22px;
+  padding: 1px 5px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--settings-ink);
+  font-size: 12px;
+  line-height: 16px;
+  white-space: nowrap;
+}
+.log-type::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--type-dot);
+}
+.log-type[data-level="info"] {
+  --type-dot: var(--toast-success-color);
+  --type-ink: #237804;
+  --type-bg: #f6ffed;
+  --type-border: #b7eb8f;
+}
+.log-type[data-level="warning"] {
+  --type-dot: var(--toast-warning-color);
+  --type-ink: #ad4e00;
+  --type-bg: #fff7e6;
+  --type-border: #ffd591;
+}
+.log-type[data-level="error"] {
+  --type-dot: var(--toast-error-color);
+  --type-ink: #a8071a;
+  --type-bg: #fff1f0;
+  --type-border: #ffa39e;
+}
+.log-type[aria-pressed="true"] {
+  color: var(--type-ink);
+  background: var(--type-bg);
+  border-color: var(--type-border);
+}
+.log-type:focus-visible, .log-periods .choice:focus-visible { outline-width: 2px; outline-offset: 1px; }
+.log-feed { position: relative; overflow: hidden; }
+.log-feed .entries { position: absolute; inset: 0 0 auto; }
+.log-message { padding: 10px 0; }
 .entries { list-style: none; margin: 0; padding: 0; }
-.entries li { padding: 9px 0; }
-.entries li + li { border-top: 1px solid var(--line); }
+.entries li { padding: 9px 0; border-bottom: 1px solid var(--line); }
 .entry-meta {
   display: flex;
   align-items: center;
@@ -539,7 +626,7 @@ input::placeholder { color: var(--muted); font-weight: 450; }
 .entries [data-severity="error"] .entry-dot { background: var(--toast-error-color); }
 .entry-meta time, .entry-duration { white-space: nowrap; }
 .entry-duration { margin-inline-start: auto; text-align: right; }
-.entries strong { font-size: 14px; }
+.entries strong { display: block; font-size: 14px; }
 .entries p { color: var(--muted); font-size: 13px; line-height: 1.5; overflow-wrap: anywhere; }
 .toast {
   position: fixed;
@@ -608,6 +695,33 @@ dialog .row { justify-content: end; }
   gap: 10px;
   animation: sheet-arrive .22s cubic-bezier(.18, .76, .28, 1) both;
 }
+.bottom-sheet[open][data-kind="provider"] { gap: 0; padding-top: 4px; }
+.bottom-sheet[data-dragged] {
+  animation: none;
+  transition: transform .18s cubic-bezier(.18, .76, .28, 1);
+}
+.bottom-sheet[data-dragging] { transition: none; }
+.sheet-grab {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 100%;
+  height: 32px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  cursor: grab;
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+.sheet-grab::before {
+  content: "";
+  width: 38px;
+  height: 4px;
+  border-radius: 4px;
+  background: var(--switch-off);
+}
 .sheet-heading { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .sheet-options {
   display: grid;
@@ -624,7 +738,7 @@ dialog .row { justify-content: end; }
     height: 100vh;
     height: 100dvh;
   }
-  .panels { padding: 12px; }
+  .panel { padding: 12px; }
 }
 @media (prefers-reduced-motion: reduce) {
   *, *::before { transition: none !important; }
@@ -792,9 +906,12 @@ dialog .row { justify-content: end; }
               </div>
               <button id="keep-data-on" type="button" class="switch" role="switch" aria-checked="false" aria-describedby="keep-data-on-description"></button>
             </div>
-            <div class="setting-row">
-              <label for="airplane">飞行模式兜底</label>
-              <button id="airplane" type="button" class="switch" role="switch" aria-checked="false" aria-label="飞行模式兜底"></button>
+            <div class="setting-row setting-row-with-description">
+              <div class="setting-copy">
+                <label for="airplane">切换飞行模式</label>
+                <p id="airplane-description" class="setting-description">开启后，通过飞行模式刷新地址作为兜底</p>
+              </div>
+              <button id="airplane" type="button" class="switch" role="switch" aria-checked="false" aria-describedby="airplane-description"></button>
             </div>
           </section>
 
@@ -805,22 +922,33 @@ dialog .row { justify-content: end; }
       <section id="logs" class="panel" role="tabpanel" aria-labelledby="tab-logs" hidden>
         <div class="section-group">
           <div class="row section-heading"><h2>记录日志</h2><button id="logging" class="switch" role="switch" aria-checked="true" aria-label="记录日志"></button></div>
-          <div class="card stack">
-            <p class="subtle">保留时长</p>
-            <div class="choices" aria-label="日志保留时长">
-              <button class="choice" data-days="1" aria-pressed="false">1 天</button>
-              <button class="choice" data-days="3" aria-pressed="true">3 天</button>
-              <button class="choice" data-days="7" aria-pressed="false">7 天</button>
+          <div class="card log-retention">
+            <p id="log-retention-label" class="subtle">保留时长</p>
+            <div class="log-periods" role="group" aria-labelledby="log-retention-label">
+              <button class="choice" type="button" data-days="1" aria-pressed="false">1 天</button>
+              <button class="choice" type="button" data-days="3" aria-pressed="true">3 天</button>
+              <button class="choice" type="button" data-days="7" aria-pressed="false">7 天</button>
             </div>
           </div>
         </div>
 
         <div class="section-group">
           <h2 class="section-heading">运行记录</h2>
-          <div class="card stack">
-            <ol id="entries" class="entries"></ol>
-            <p id="empty-logs" class="subtle" hidden>暂无运行记录</p>
-            <button id="more-logs" class="secondary wide" type="button" hidden>加载更多</button>
+          <div class="card log-card">
+            <div id="log-type-bar" class="log-type-bar">
+              <p id="log-type-label" class="subtle">日志类型</p>
+              <div class="log-types" role="group" aria-labelledby="log-type-label">
+                <button class="log-type" type="button" data-level="all" aria-pressed="true">全部</button>
+                <button class="log-type" type="button" data-level="info" aria-pressed="false">信息</button>
+                <button class="log-type" type="button" data-level="warning" aria-pressed="false">警告</button>
+                <button class="log-type" type="button" data-level="error" aria-pressed="false">异常</button>
+              </div>
+            </div>
+            <div id="log-feed" class="log-feed">
+              <ol id="entries" class="entries" role="list" aria-label="运行记录"></ol>
+            </div>
+            <p id="log-feedback" class="subtle log-message" role="status" hidden></p>
+            <p id="empty-logs" class="subtle log-message" hidden></p>
           </div>
         </div>
       </section>
@@ -847,9 +975,10 @@ dialog .row { justify-content: end; }
   </span>
   <span id="toast-message"></span>
 </div>
-<dialog id="picker-sheet" class="bottom-sheet" aria-labelledby="picker-title" closedby="closerequest">
-  <div class="sheet-heading">
-    <h2 id="picker-title"></h2>
+<dialog id="picker-sheet" class="bottom-sheet" aria-label="选择公网域名" closedby="closerequest">
+  <button id="picker-grab" class="sheet-grab" type="button" aria-label="下拉关闭云服务商选择" hidden></button>
+  <div id="picker-heading" class="sheet-heading">
+    <h2 id="picker-title">选择公网域名</h2>
     <button id="close-picker" class="icon-button" type="button" aria-label="关闭选择" title="关闭选择" autofocus>
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true">
         <path d="m6 6 12 12M18 6 6 18"/>
@@ -868,6 +997,7 @@ dialog .row { justify-content: end; }
 </dialog>
 
 <script src="view.js" defer></script>
+<script src="logs.js" defer></script>
 <script src="app.js" defer></script>
 </body>
 </html>

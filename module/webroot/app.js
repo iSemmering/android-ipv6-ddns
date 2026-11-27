@@ -13,9 +13,6 @@ let toggleBusy = false;
 let checkSubmitting = false;
 let saveBusy = false;
 let logSettingsBusy = false;
-let logsBusy = false;
-let logsRevision = 0;
-let logsCursor = '';
 let pendingBinding = null;
 let configSession = 0;
 let draftRevision = 0;
@@ -174,6 +171,7 @@ async function refreshStatus() {
     const first = !state;
     acceptStatus(status);
     if (first) hydrateConfig();
+    refreshLogHead();
   } catch (error) {
     if (before !== stateRevision) return;
     if (connected || !state) {
@@ -188,57 +186,6 @@ async function refreshStatus() {
   }
 }
 
-function logNode(record) {
-  const item = document.createElement('li');
-  const meta = document.createElement('div');
-  const dot = document.createElement('span');
-  const time = document.createElement('time');
-  const duration = document.createElement('span');
-  const title = document.createElement('strong');
-  const detail = document.createElement('p');
-  item.dataset.severity = record.severity;
-  meta.className = 'entry-meta';
-  dot.className = 'entry-dot';
-  dot.setAttribute('aria-hidden', 'true');
-  time.textContent = record.time;
-  duration.className = 'entry-duration';
-  duration.textContent = record.duration;
-  title.textContent = record.action + ' · ' + record.outcome;
-  detail.textContent = record.reason;
-  meta.append(dot, time, duration);
-  item.append(meta, title, detail);
-  return item;
-}
-
-async function loadLogs(append = false) {
-  if (append && (logsBusy || !logsCursor)) return;
-  const revision = ++logsRevision;
-  logsBusy = true;
-  el('more-logs').disabled = true;
-  try {
-    const reply = await request('logs', { cursor: append ? logsCursor : '' });
-    if (revision !== logsRevision) return;
-    const entries = el('entries');
-    const items = (reply.entries || []).map(logNode);
-    if (append) entries.append(...items);
-    else entries.replaceChildren(...items);
-    logsCursor = reply.cursor || '';
-    el('more-logs').hidden = !logsCursor;
-    el('empty-logs').textContent = '暂无运行记录';
-    el('empty-logs').hidden = entries.children.length > 0;
-  } catch (error) {
-    if (revision === logsRevision) {
-      el('empty-logs').textContent = error.message;
-      el('empty-logs').hidden = false;
-    }
-  } finally {
-    if (revision === logsRevision) {
-      logsBusy = false;
-      el('more-logs').disabled = false;
-    }
-  }
-}
-
 async function updateLogs(parameters) {
   if (!connected || logSettingsBusy) return;
   logSettingsBusy = true;
@@ -246,7 +193,7 @@ async function updateLogs(parameters) {
   try {
     const { status } = await request('logSettings', parameters);
     acceptStatus(status);
-    await loadLogs();
+    resetLogRows();
   } catch (error) {
     toast(error.message, 'error');
   } finally {
@@ -255,6 +202,7 @@ async function updateLogs(parameters) {
   }
 }
 
+tabList.addEventListener('contextmenu', event => event.preventDefault());
 for (const tab of tabs) {
   tab.addEventListener('click', () => {
     const name = tab.getAttribute('aria-controls');
@@ -266,7 +214,7 @@ for (const tab of tabs) {
       configSession++;
       for (const button of credentialToggles) setCredentialVisibility(button, false);
     }
-    if (name === 'logs') void loadLogs();
+    if (name === 'logs') resetLogRows();
   });
   tab.addEventListener('keydown', event => {
     if (!['ArrowLeft', 'ArrowRight'].includes(event.key)) return;
@@ -317,18 +265,18 @@ el('copy-address').addEventListener('click', event => {
 el('copy-domain').addEventListener('click', event => {
   copyValue(state?.Domain, el('bound-domain'), event.currentTarget, '域名');
 });
-el('choose-provider').addEventListener('click', () => openPicker('选择云服务商', providerOptions));
+el('choose-provider').addEventListener('click', () => openPicker('provider', providerOptions));
 el('choose-zone').addEventListener('click', () => {
   if (!state?.Zones.length) {
     toast('请先填写 AK 和 SK 并点击确定', 'warning');
     return;
   }
   const selected = el('zone').value;
-  openPicker('选择公网域名', state.Zones.map(zone => ({
+  openPicker('zone', state.Zones.map(zone => ({
     label: zone.name, value: zone.id, selected: zone.id === selected,
   })), selectZone);
 });
-el('close-picker').addEventListener('click', () => el('picker-sheet').close());
+el('close-picker').addEventListener('click', () => pickerSheet.close());
 el('prefix').addEventListener('input', renderFullDomain);
 for (const id of ['keep-data-on', 'airplane']) {
   const button = el(id);
@@ -338,9 +286,11 @@ for (const id of ['keep-data-on', 'airplane']) {
 }
 el('logging').addEventListener('click', () => { void updateLogs({ logging: !state?.Logging }); });
 for (const button of logPeriods) {
-  button.addEventListener('click', () => { void updateLogs({ days: Number(button.dataset.days) }); });
+  button.addEventListener('click', () => {
+    const days = Number(button.dataset.days);
+    if (days !== state?.Days) void updateLogs({ days });
+  });
 }
-el('more-logs').addEventListener('click', () => { void loadLogs(true); });
 
 for (const id of ['ttl', 'interval']) {
   const input = el(id);
@@ -465,13 +415,6 @@ void refreshStatus();
 setInterval(() => {
   if (state?.ManualPending || Date.now() - lastStatusPoll >= 2500) void refreshStatus();
 }, 500);
-setInterval(() => {
-  if (!document.hidden && !el('logs').hidden && !logsBusy && el('entries').children.length <= 100) void loadLogs();
-}, 8000);
-
 document.addEventListener('visibilitychange', () => {
-  if (!document.hidden) {
-    void refreshStatus();
-    if (!el('logs').hidden) void loadLogs();
-  }
+  if (!document.hidden) void refreshStatus();
 });

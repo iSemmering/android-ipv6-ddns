@@ -38,6 +38,7 @@ type Request struct {
 	Enabled    *bool      `json:"enabled,omitempty"`
 	Logging    *bool      `json:"logging,omitempty"`
 	Days       int        `json:"days,omitempty"`
+	Level      string     `json:"level,omitempty"`
 	Cursor     string     `json:"cursor,omitempty"`
 	Draft      *DraftEdit `json:"draft,omitempty"`
 	Revision   int64      `json:"revision,omitempty"`
@@ -119,6 +120,7 @@ func (e *Engine) status() *View {
 		Interval: c.Interval, Days: c.Days, TTL: c.TTL, Prefix: c.Prefix, Zone: c.Zone,
 		Zones: append([]dns.Zone{}, c.Zones...), CredentialsSaved: c.Key.AK != "" && c.Key.SK != "",
 		Domain: c.Name(), Phase: phase, Label: label, Reason: reason,
+		LogHead:       e.logs.heads(),
 		Busy:          e.busy && c.Enabled && c.Ready(),
 		ManualPending: c.Enabled && c.Ready() && e.manualRequested > e.manualCompleted,
 	}
@@ -432,7 +434,7 @@ func (e *Engine) Call(ctx context.Context, request Request) Reply {
 	case "logSettings":
 		err = e.setLogs(request)
 	case "logs":
-		result.Entries, result.Cursor, err = e.logs.page(e.configSnapshot().Days, request.Cursor)
+		result.Entries, result.Cursor, err = e.logs.page(e.configSnapshot().Days, request.Level, request.Cursor)
 	case "check":
 		e.mu.Lock()
 		if !e.config.Enabled || !e.config.Ready() {
